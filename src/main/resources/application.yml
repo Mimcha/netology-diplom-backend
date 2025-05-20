@@ -1,0 +1,30 @@
+server:
+  port: 8080
+spring:
+  datasource:
+    url: jdbc:postgresql://postgres:5432/cloud_db
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+token:
+  expiration: 3600
+storage:
+  location: uploads
+networks:
+  backend-network:
+    driver: bridge
+
+services:
+  postgres:
+    networks:
+      - backend-network
+
+  cloud-service:
+    networks:
+      - backend-network
