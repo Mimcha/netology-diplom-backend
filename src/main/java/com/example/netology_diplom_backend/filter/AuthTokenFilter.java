@@ -1,6 +1,5 @@
 package com.example.netology_diplom_backend.filter;
 
-import com.example.netology_diplom_backend.service.AuthService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -13,7 +12,7 @@ import java.io.IOException;
 @Component
 @RequiredArgsConstructor
 public class AuthTokenFilter extends OncePerRequestFilter {
-    private final AuthService authService;
+    private final TokenValidator tokenValidator;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
@@ -27,7 +26,7 @@ public class AuthTokenFilter extends OncePerRequestFilter {
         }
 
         String token = request.getHeader("auth-token");
-        if (token == null || !authService.validateToken(token)) {
+        if (token == null || !tokenValidator.validateToken(token)) {
             response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid token");
             return;
         }

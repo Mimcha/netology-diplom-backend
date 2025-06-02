@@ -1,12 +1,10 @@
 package com.example.netology_diplom_backend.service;
 
-import com.example.netology_diplom_backend.config.ApplicationProperties;
 import com.example.netology_diplom_backend.model.Token;
 import com.example.netology_diplom_backend.model.User;
 import com.example.netology_diplom_backend.repository.TokenRepository;
 import com.example.netology_diplom_backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -20,7 +18,10 @@ public class AuthService {
     private final UserRepository userRepository;
     private final TokenRepository tokenRepository;
     private final PasswordEncoder passwordEncoder;
-    private final ApplicationProperties appProps;
+    public User getUser;
+
+    @Value("${token.expiration}")
+    private int expirationTime;
 
     public String login(String login, String password) {
         User user = userRepository.findByLogin(login);
@@ -29,7 +30,7 @@ public class AuthService {
         }
 
         String token = generateUniqueToken();
-        LocalDateTime expiration = LocalDateTime.now().plusSeconds(appProps.getExpiration());
+        LocalDateTime expiration = LocalDateTime.now().plusSeconds(expirationTime);
 
         Token tokenEntity = new Token();
         tokenEntity.setToken(token);

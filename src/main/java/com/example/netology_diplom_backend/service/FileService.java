@@ -4,21 +4,20 @@ import com.example.netology_diplom_backend.dto.FileResponse;
 import com.example.netology_diplom_backend.model.FileMetadata;
 import com.example.netology_diplom_backend.model.User;
 import com.example.netology_diplom_backend.repository.FileRepository;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.UrlResource;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.awt.print.Pageable;
-import java.net.URI;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
-
 import java.io.IOException;
+import java.net.MalformedURLException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -26,20 +25,23 @@ import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-
 @Service
-@RequiredArgsConstructor
 public class FileService {
-    private final FileRepository fileRepository;
-    private final AuthService authService;
-    private final Path storageLocation;
-    private static final Logger logger = LoggerFactory.getLogger(FileService.class);
 
+    private final AuthService authService;
+    private final FileRepository fileRepository;
+    private final Path storageLocation;
+
+    @Autowired
     public FileService(AuthService authService, FileRepository fileRepository,
                        @Value("${storage.location}") String storagePath) {
         this.authService = authService;
         this.fileRepository = fileRepository;
         this.storageLocation = Paths.get(storagePath).toAbsolutePath().normalize();
+    }
+
+    @PostConstruct
+    public void init() {
         try {
             Files.createDirectories(storageLocation);
         } catch (Exception ex) {
@@ -58,7 +60,7 @@ public class FileService {
         metadata.setOriginalName(filename);
         metadata.setStoredName(storedName);
         metadata.setSize(file.getSize());
-        metadata.setUser(user);
+        metadata.setUser (user);
 
         fileRepository.save(metadata);
     }
@@ -70,7 +72,7 @@ public class FileService {
         if (metadata != null) {
             Path filePath = storageLocation.resolve(metadata.getStoredName());
             try {
-                Files.delete(filePath);
+                Files.deleteIfExists(filePath);
                 fileRepository.delete(metadata);
             } catch (IOException ex) {
                 throw new RuntimeException("Error deleting file", ex);
@@ -96,13 +98,9 @@ public class FileService {
                 throw new RuntimeException("File is not readable: " + filePath);
             }
 
-            URI uri = new URI("file", null,
-                    URLEncoder.encode(filePath.toAbsolutePath().toString(), StandardCharsets.UTF_8),
-                    null);
-            return new UrlResource(uri);
+            return new UrlResource(filePath.toUri());
 
-        } catch (Exception e) {
-            logger.error("Error loading file: {}", filename, e);
+        } catch (MalformedURLException e) {
             throw new RuntimeException("Error reading file", e);
         }
     }
@@ -119,15 +117,12 @@ public class FileService {
 
     public List<FileResponse> getFileList(String token, int limit) {
         User user = authService.getUserFromToken(token);
-        List<FileMetadata> files = fileRepository.findTopByUserOrderByOriginalNameAsc(user, (Pageable) PageRequest.of(0, limit));
+        Pageable pageable = PageRequest.of(0, limit);
+
+        List<FileMetadata> files = fileRepository.findTopByUserOrderByOriginalNameAsc(user, pageable);
 
         return files.stream()
-                .map(f -> {
-                    FileResponse response = new FileResponse();
-                    response.setFilename(f.getOriginalName());
-                    response.setSize(f.getSize());
-                    return response;
-                })
+                .map(f -> new FileResponse(f.getOriginalName(), f.getSize()))
                 .collect(Collectors.toList());
     }
 }

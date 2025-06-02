@@ -1,4 +1,6 @@
-
+networks:
+  backend-network:
+    driver: bridge
 services:
   postgres:
     image: postgres:17.5
@@ -13,7 +15,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: cloud_db
     healthcheck:
-      test: pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB
+      test: ["CMD-SHELL", "pg_isready -U postgres -d cloud_db"]
       interval: 10s
       timeout: 5s
       start_period: 10s
@@ -21,8 +23,6 @@ services:
     networks:
       - backend-network
   cloud-service:
-    networks:
-      - backend-network
     build: .
     ports:
       - "8080:8080"
@@ -33,6 +33,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    networks:
+      - backend-network
 
   pgadmin:
     image: dpage/pgadmin4:9.3.0
@@ -55,10 +57,9 @@ services:
       start_period: 10s
       retries: 5
     entrypoint: /bin/sh -c "chmod 600 /pgadmin4/pgpass; /entrypoint.sh;"
+
 volumes:
   postgres_data:
   pgadmin_data:
 
-networks:
-  backend-network:
-    driver: bridge
+

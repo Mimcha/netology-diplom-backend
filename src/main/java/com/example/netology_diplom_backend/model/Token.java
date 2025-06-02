@@ -1,28 +1,28 @@
 package com.example.netology_diplom_backend.model;
 
-import jakarta.persistence.CascadeType;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.OneToOne;
-import lombok.AllArgsConstructor;
+import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.AllArgsConstructor;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
 
 import java.time.LocalDateTime;
 
 @Data
+@Table(name = "\"token\"")
 @NoArgsConstructor
 @AllArgsConstructor
 @Entity
 public class Token {
     @Id
+    @Column(name = "token", nullable = false, unique = true)
     private String token;
 
-    @OneToOne(cascade = CascadeType.REMOVE)
+    @OneToOne
+    @JoinColumn(name = "user_id", referencedColumnName = "id", nullable = false)
     @OnDelete(action = OnDeleteAction.CASCADE)
     private User user;
-
+    @Column(name = "expiration", nullable = false)
     private LocalDateTime expiration;
 }
