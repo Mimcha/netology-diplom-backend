@@ -21,7 +21,7 @@ public class AuthController {
 
     @PostMapping
     public ResponseEntity<?> login(@RequestBody LoginRequest request) {
-        String token = authService.login(request.getLogin(), request.getPassword());
+        String token = authService.login(request.getEmail(), request.getPassword());
         if (token == null) {
             return ResponseEntity.status(400).body(new ErrorResponse("Bad credentials", 1));
         }

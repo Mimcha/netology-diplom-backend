@@ -1,6 +1,6 @@
--- Создание пользователя
-INSERT INTO users (id, login, password_hash)
-VALUES (1, 'test_user', '$2a$10$GRLdNijw1Ag4rbsddzQ8qewxHNZ3qzoKzOxKbPmiSIsgu7tJVSeqW');
+INSERT INTO user (email, password_hash) VALUES
+('user1@example.com', '$2a$10$GRLdNijw1Ag4rbsddzQ8qewxHNZ3qzoKzOxKbPmiSIsgu7tJVSeqW'),
+('user2@example.com', '$2a$10$GRLdNijw1Ag4rbsddzQ8qewxHNZ3qzoKzOxKbPmiSIsgu7tJVSeqW');
 
 -- Создание токена (если есть)
 INSERT INTO token (token, user_id, expiration)

@@ -23,8 +23,8 @@ public class AuthService {
     @Value("${token.expiration}")
     private int expirationTime;
 
-    public String login(String login, String password) {
-        User user = userRepository.findByLogin(login);
+    public String login(String email, String password) {
+        User user = userRepository.findByEmail(email);
         if (user == null || !passwordEncoder.matches(password, user.getPasswordHash())) {
             return null;
         }
