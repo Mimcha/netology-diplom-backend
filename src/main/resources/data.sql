@@ -1,4 +1,4 @@
-INSERT INTO user (email, password_hash) VALUES
+INSERT INTO user (login, password_hash) VALUES
 ('user1@example.com', '$2a$10$GRLdNijw1Ag4rbsddzQ8qewxHNZ3qzoKzOxKbPmiSIsgu7tJVSeqW'),
 ('user2@example.com', '$2a$10$GRLdNijw1Ag4rbsddzQ8qewxHNZ3qzoKzOxKbPmiSIsgu7tJVSeqW');
 

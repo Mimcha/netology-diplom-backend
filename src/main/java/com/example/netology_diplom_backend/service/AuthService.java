@@ -18,27 +18,35 @@ public class AuthService {
     private final UserRepository userRepository;
     private final TokenRepository tokenRepository;
     private final PasswordEncoder passwordEncoder;
-    public User getUser;
 
     @Value("${token.expiration}")
     private int expirationTime;
 
-    public String login(String email, String password) {
-        User user = userRepository.findByEmail(email);
+    public String login(String login, String password) {
+        User user = userRepository.findByLogin(login);
         if (user == null || !passwordEncoder.matches(password, user.getPasswordHash())) {
             return null;
         }
 
-        String token = generateUniqueToken();
+        Token existingToken = tokenRepository.findByUserId(user.getId());
+
+        String newTokenValue = generateUniqueToken();
         LocalDateTime expiration = LocalDateTime.now().plusSeconds(expirationTime);
 
-        Token tokenEntity = new Token();
-        tokenEntity.setToken(token);
-        tokenEntity.setUser(user);
-        tokenEntity.setExpiration(expiration);
+        if (existingToken != null) {
+            // НЕ меняем ID
+            existingToken.setToken(newTokenValue);
+            existingToken.setExpiration(expiration);
+            tokenRepository.save(existingToken);
+        } else {
+            Token tokenEntity = new Token();
+            tokenEntity.setToken(newTokenValue);
+            tokenEntity.setUser(user);
+            tokenEntity.setExpiration(expiration);
+            tokenRepository.save(tokenEntity);
+        }
 
-        tokenRepository.save(tokenEntity);
-        return token;
+        return newTokenValue;
     }
 
     public boolean validateToken(String token) {
@@ -64,7 +72,8 @@ public class AuthService {
 
     public User getUserFromToken(String token) {
         if (!validateToken(token)) return null;
-        return tokenRepository.findByToken(token).getUser();
+        Token tokenEntity = tokenRepository.findByToken(token);
+        return tokenEntity != null ? tokenEntity.getUser() : null;
     }
 
     private String generateUniqueToken() {
