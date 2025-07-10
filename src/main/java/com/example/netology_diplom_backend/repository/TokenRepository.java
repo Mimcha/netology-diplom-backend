@@ -1,10 +1,15 @@
 package com.example.netology_diplom_backend.repository;
 
 import com.example.netology_diplom_backend.model.Token;
+import com.example.netology_diplom_backend.model.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-public interface TokenRepository extends JpaRepository<Token, String> {
-    Token findByToken(String token);
+import java.util.Optional;
 
-    Token findByUserId(Long userId);
+public interface TokenRepository extends JpaRepository<Token, String> {
+    Optional<Token> findByTokenAndActiveTrue(String token);
+
+    void deleteByToken(String token);
+
+    void deleteAllByUser(User user);
 }

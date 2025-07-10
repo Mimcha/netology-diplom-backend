@@ -1,66 +1,79 @@
 package com.example.netology_diplom_backend.filter;
 
+import com.example.netology_diplom_backend.service.AuthService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.RequiredArgsConstructor;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.List;
-import java.util.stream.Collectors;
+import java.util.Arrays;
 
 @Component
-@RequiredArgsConstructor
 public class AuthTokenFilter extends OncePerRequestFilter {
-    private final TokenValidator tokenValidator;
+
+    @Autowired
+    private AuthService authService;
+
+    private static final Logger logger = LoggerFactory.getLogger(AuthTokenFilter.class);
+
+    public AuthTokenFilter(AuthService authService) {
+        this.authService = authService;
+    }
 
     @Override
-    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
-            throws ServletException, IOException {
-        String path = request.getRequestURI();
+    protected void doFilterInternal(HttpServletRequest request,
+                                    HttpServletResponse response,
+                                    FilterChain filterChain) throws ServletException, IOException {
+        // Логирование запроса (пример с исправленным printf)
+        System.out.printf("Request method: %s, URL: %s%n", request.getMethod(), request.getRequestURL());
 
-        // Пропустите preflight-запросы (OPTIONS)
-        if ("OPTIONS".equals(request.getMethod())) {
-            response.setHeader("Access-Control-Allow-Origin", "http://localhost:8081");
-            response.setHeader("Access-Control-Allow-Credentials", "true");
-            response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-            response.setHeader("Access-Control-Allow-Headers", "Content-Type, auth-token");
-            response.setStatus(HttpServletResponse.SC_OK);
-            return;
+        // Получение токена из заголовка (с учётом регистра)
+        String token = request.getHeader("Auth-Token");
+        if (token == null) {
+            token = request.getHeader("auth-token");
         }
 
-        if ("/login".equals(path) || path.equals("/list")){
-            // ✅ Правильно: вызываем doFilter
-            filterChain.doFilter(request, response);
-            return;
+        // Если токен не найден в заголовках — ищем в куках
+        if (token == null || token.isBlank()) {
+            if (request.getCookies() != null) {
+                for (Cookie cookie : request.getCookies()) {
+                    if ("auth-token".equals(cookie.getName())) {
+                        token = cookie.getValue();
+                        System.out.printf("Token found in cookie 'auth-token': %s%n", token);
+                        break;
+                    }
+                }
+            }
+        }
+        // Если токен начинается с "Bearer ", убираем префикс
+        if (token != null && token.startsWith("Bearer ")) {
+            token = token.substring(7);
+        }
+        // Логируем итоговый токен
+        System.out.printf("Using token: %s%n", token);
+
+        // Проверка токена и установка Authentication в контекст
+        if (token != null && !token.isBlank()) {
+            Authentication auth = authService.getAuthentication(token);
+            if (auth != null) {
+                SecurityContextHolder.getContext().setAuthentication(auth);
+                logger.debug("Authentication set for user: {}", auth.getName());
+            } else {
+                logger.debug("Authentication is null for token");
+            }
+        } else {
+            logger.debug("No token found");
         }
 
-        String token = request.getHeader("auth-token");
-        if (token == null || !tokenValidator.validateToken(token)) {
-            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid token");
-            return;
-        }
-
-        String username = tokenValidator.getUsernameFromToken(token);
-// Можно передать пустой список или с одной ролью "ROLE_USER"
-        List<SimpleGrantedAuthority> authorities = List.of(); // пустой список
-
-// Если Spring Security ругается на отсутствие авторитетов, используйте:
-// List<SimpleGrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_USER"));
-
-        UsernamePasswordAuthenticationToken authentication =
-                new UsernamePasswordAuthenticationToken(username, null, authorities);
-
-        SecurityContextHolder.getContext().setAuthentication(authentication);
-
-        filterChain.doFilter(request, response);
-        // ✅ Правильно: вызываем doFilter
         filterChain.doFilter(request, response);
     }
 }

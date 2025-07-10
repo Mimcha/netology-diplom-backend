@@ -1,37 +1,32 @@
 package com.example.netology_diplom_backend;
-
 import com.example.netology_diplom_backend.model.User;
 import com.example.netology_diplom_backend.repository.UserRepository;
-import lombok.RequiredArgsConstructor;
+import jakarta.annotation.PostConstruct;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 public class DataInitializer implements CommandLineRunner {
+
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
 
+    public DataInitializer(UserRepository userRepository,
+                           PasswordEncoder passwordEncoder) {
+        this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
+    }
+
     @Override
-    public void run(String... args) {
-        if (userRepository.findByLogin("admin@example.com") == null) {
-            User admin = new User();
-            admin.setLogin("admin@example.com");
-            admin.setPasswordHash(passwordEncoder.encode("password"));
-            userRepository.save(admin);
-        }
-        if (userRepository.findByLogin("admin1@example.com") == null) {
-            User admin = new User();
-            admin.setLogin("admin1@example.com");
-            admin.setPasswordHash(passwordEncoder.encode("password"));
-            userRepository.save(admin);
-        }
-        if (userRepository.findByLogin("admin2@example.com") == null) {
-            User admin = new User();
-            admin.setLogin("admin2@example.com");
-            admin.setPasswordHash(passwordEncoder.encode("password"));
-            userRepository.save(admin);
+    public void run(String... args) throws Exception {
+        if (userRepository.findByEmail("user@example.com").isEmpty()) {
+            User user = new User();
+            user.setEmail("user@example.com");
+            user.setPassword(passwordEncoder.encode("password123")); // хешируем пароль
+            userRepository.save(user);
+            System.out.println("User created: user@example.com / password123");
         }
     }
 }

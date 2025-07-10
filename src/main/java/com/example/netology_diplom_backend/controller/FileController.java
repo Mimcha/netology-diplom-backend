@@ -1,77 +1,118 @@
 package com.example.netology_diplom_backend.controller;
 
-import com.example.netology_diplom_backend.dto.ErrorResponse;
+import com.example.netology_diplom_backend.dto.RenameFileRequest;
+import com.example.netology_diplom_backend.model.FileMetadata;
+import com.example.netology_diplom_backend.model.User;
+import com.example.netology_diplom_backend.service.AuthService;
 import com.example.netology_diplom_backend.service.FileService;
-import lombok.RequiredArgsConstructor;
-import org.springframework.core.io.Resource;
-import org.springframework.http.HttpHeaders;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping("/file")
-@RequiredArgsConstructor
 public class FileController {
+
+    private final AuthService authService;
     private final FileService fileService;
 
-    @PostMapping
+    public FileController(AuthService authService, FileService fileService) {
+        this.authService = authService;
+        this.fileService = fileService;
+    }
+
+    @PostMapping("/file")
     public ResponseEntity<?> uploadFile(
             @RequestHeader("auth-token") String token,
             @RequestParam("filename") String filename,
-            @RequestParam("file") MultipartFile file) {
-        try {
-            fileService.uploadFile(token, filename, file);
-            return ResponseEntity.ok().build();
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(new ErrorResponse("Invalid input: " + e.getMessage(), 2));
-        } catch (Exception e) {
-            return ResponseEntity.status(500).body(new ErrorResponse("Error uploading file: " + e.getMessage(), 2));
+            @RequestParam("file") MultipartFile file) throws IOException {
+
+        User user = authService.getUserByToken(token);
+        if (user == null) {
+            return ResponseEntity.status(401).build();
         }
+
+        fileService.uploadFile(user, file, filename);
+        return ResponseEntity.ok().build();
     }
 
-    @DeleteMapping
+    @DeleteMapping("/file")
     public ResponseEntity<?> deleteFile(
             @RequestHeader("auth-token") String token,
-            @RequestParam("filename") String filename) {
-        try {
-            fileService.deleteFile(token, filename);
-            return ResponseEntity.ok().build();
-        } catch (Exception e) {
-            return ResponseEntity.status(500).body(new ErrorResponse("Error deleting file: " + e.getMessage(), 3));
+            @RequestParam("filename") String filename) throws IOException {
+
+        User user = authService.getUserByToken(token);
+        if (user == null) {
+            return ResponseEntity.status(401).build();
         }
+
+        fileService.deleteFile(user, filename);
+        return ResponseEntity.ok().build();
     }
 
-    @GetMapping
-    public ResponseEntity<Resource> downloadFile(
+    @GetMapping("/file")
+    public void downloadFile(
             @RequestHeader("auth-token") String token,
-            @RequestParam("filename") String filename) {
-        try {
-            Resource file = fileService.downloadFile(token, filename);
-            return ResponseEntity.ok()
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + file.getFilename() + "\"")
-                    .body(file);
-        } catch (Exception e) {
-            return ResponseEntity.status(500).build();
+            @RequestParam("filename") String filename,
+            HttpServletResponse response) throws IOException {
+
+        User user = authService.getUserByToken(token);
+        if (user == null) {
+            response.setStatus(401);
+            return;
+        }
+
+        try (InputStream is = fileService.getFile(user, filename)) {
+            response.setContentType(MediaType.APPLICATION_OCTET_STREAM_VALUE);
+            response.setHeader("Content-Disposition", "attachment; filename=\"" + filename + "\"");
+            is.transferTo(response.getOutputStream());
+            response.flushBuffer();
         }
     }
 
-    @PutMapping
+    @PutMapping("/file")
     public ResponseEntity<?> renameFile(
             @RequestHeader("auth-token") String token,
             @RequestParam("filename") String oldName,
-            @RequestBody Map<String, String> request) {
-        String newName = request.get("name");
-        try {
-            if (newName == null || newName.isEmpty()) {
-                return ResponseEntity.badRequest().body(new ErrorResponse("New name must not be empty", 4));
-            }
-            fileService.renameFile(token, oldName, newName);
-            return ResponseEntity.ok().build();
-        } catch (Exception e) {
-            return ResponseEntity.status(500).body(new ErrorResponse("Error renaming file: " + e.getMessage(), 4));
+            @RequestBody RenameFileRequest request) throws IOException {
+
+        User user = authService.getUserByToken(token);
+        if (user == null) {
+            return ResponseEntity.status(401).build();
         }
+
+        fileService.renameFile(user, oldName, request.getName());
+        return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/list")
+    public ResponseEntity<?> listFiles(
+            @RequestHeader("auth-token") String token,
+            @RequestParam(value = "limit", required = false, defaultValue = "0") int limit) {
+
+        User user = authService.getUserByToken(token);
+        if (user == null) {
+            return ResponseEntity.status(401).build();
+        }
+
+        List<FileMetadata> files = fileService.listFiles(user, limit);
+
+        // Формируем простой JSON-список с метаданными
+        var result = files.stream()
+                .map(f -> Map.of(
+                        "filename", f.getFilename(),
+                        "size", f.getSize(),
+                        "hash", f.getHash()
+                ))
+                .collect(Collectors.toList());
+
+        return ResponseEntity.ok(result);
     }
 }

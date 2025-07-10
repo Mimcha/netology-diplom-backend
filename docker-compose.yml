@@ -35,6 +35,7 @@ services:
         condition: service_healthy
     networks:
       - backend-network
+    command: java -jar /app/app.jar --debug
 
   pgadmin:
     image: dpage/pgadmin4:9.3.0

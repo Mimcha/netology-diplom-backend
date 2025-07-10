@@ -1,27 +1,53 @@
 package com.example.netology_diplom_backend.controller;
-
 import com.example.netology_diplom_backend.dto.LoginRequest;
-import com.example.netology_diplom_backend.dto.LoginResponse;
+import com.example.netology_diplom_backend.model.User;
 import com.example.netology_diplom_backend.service.AuthService;
-import com.example.netology_diplom_backend.dto.ErrorResponse;
-import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Map;
 
 @RestController
-@RequestMapping("/login")
-//@CrossOrigin (value = "http://localhost:8081",allowCredentials = "true")
-@RequiredArgsConstructor
 public class AuthController {
+
     private final AuthService authService;
 
-    @PostMapping
-    public ResponseEntity<?> login(@RequestBody LoginRequest request) {
-        String token = authService.login(request.getLogin(), request.getPassword());
-        if (token == null) {
-            return ResponseEntity.status(400).body(new ErrorResponse("Bad credentials", 1));
+    public AuthController(AuthService authService) {
+        this.authService = authService;
+    }
+
+    @PostMapping("/login")
+    public ResponseEntity<?> login(@RequestBody LoginRequest loginRequest) {
+        String email = loginRequest.getLogin();
+        String password = loginRequest.getPassword();
+
+        if (email == null || email.isBlank() || password == null || password.isBlank()) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "Email и пароль должны быть заполнены"));
         }
-        return ResponseEntity.ok(new LoginResponse(token));
+
+        User user = authService.authenticate(email, password);
+
+        if (user == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "Неверный email или пароль"));
+        }
+
+        // Создаём токен для пользователя
+        String token = authService.createTokenForUser(user);
+
+        Map<String, String> responseBody = Map.of("auth-token", token);
+
+        return ResponseEntity.ok()
+                .header("X-User-Email", user.getEmail())
+                .header("Access-Control-Expose-Headers", "X-User-Email")
+                .body(responseBody);
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<?> logout(@RequestHeader("auth-token") String token) {
+        authService.logout(token);
+        return ResponseEntity.ok().build();
     }
 }

@@ -1,128 +1,135 @@
 package com.example.netology_diplom_backend.service;
 
-import com.example.netology_diplom_backend.dto.FileResponse;
 import com.example.netology_diplom_backend.model.FileMetadata;
 import com.example.netology_diplom_backend.model.User;
-import com.example.netology_diplom_backend.repository.FileRepository;
-import jakarta.annotation.PostConstruct;
-import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.example.netology_diplom_backend.repository.FileMetadataRepository;
+import org.apache.commons.codec.digest.DigestUtils;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.UrlResource;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
-import java.net.MalformedURLException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.io.*;
+import java.nio.file.*;
 import java.util.List;
-import java.util.UUID;
-import java.util.stream.Collectors;
+import java.util.Optional;
 
 @Service
 public class FileService {
 
-    private final AuthService authService;
-    private final FileRepository fileRepository;
-    private final Path storageLocation;
+    private final FileMetadataRepository fileMetadataRepository;
 
-    @Autowired
-    public FileService(AuthService authService, FileRepository fileRepository,
-                       @Value("${storage.location}") String storagePath) {
-        this.authService = authService;
-        this.fileRepository = fileRepository;
-        this.storageLocation = Paths.get(storagePath).toAbsolutePath().normalize();
-    }
+    private final Path rootPath;
 
-    @PostConstruct
-    public void init() {
+    public FileService(FileMetadataRepository fileMetadataRepository,
+                       @Value("${app.file-storage.path}") String storagePath) {
+        this.fileMetadataRepository = fileMetadataRepository;
+        this.rootPath = Paths.get(storagePath);
         try {
-            Files.createDirectories(storageLocation);
-        } catch (Exception ex) {
-            throw new RuntimeException("Could not create upload directory", ex);
+            Files.createDirectories(rootPath);
+        } catch (IOException e) {
+            throw new RuntimeException("Could not create storage directory", e);
         }
     }
 
-    public void uploadFile(String token, String filename, MultipartFile file) throws IOException {
-        User user = authService.getUserFromToken(token);
-        String storedName = UUID.randomUUID() + "_" + filename;
-        Path targetLocation = storageLocation.resolve(storedName);
-
-        file.transferTo(targetLocation);
-
-        FileMetadata metadata = new FileMetadata();
-        metadata.setOriginalName(filename);
-        metadata.setStoredName(storedName);
-        metadata.setSize(file.getSize());
-        metadata.setUser (user);
-
-        fileRepository.save(metadata);
-    }
-
-    public void deleteFile(String token, String filename) {
-        User user = authService.getUserFromToken(token);
-        FileMetadata metadata = fileRepository.findByUserAndOriginalName(user, filename);
-
-        if (metadata != null) {
-            Path filePath = storageLocation.resolve(metadata.getStoredName());
-            try {
-                Files.deleteIfExists(filePath);
-                fileRepository.delete(metadata);
-            } catch (IOException ex) {
-                throw new RuntimeException("Error deleting file", ex);
-            }
-        }
-    }
-
-    public UrlResource downloadFile(String token, String filename) {
-        User user = authService.getUserFromToken(token);
-        FileMetadata metadata = fileRepository.findByUserAndOriginalName(user, filename);
-
-        if (metadata == null) {
-            throw new RuntimeException("File not found");
+    /**
+     * Загрузить файл
+     */
+    public void uploadFile(User user, MultipartFile file, String filename) throws IOException {
+        if (file.isEmpty()) {
+            throw new IllegalArgumentException("File is empty");
         }
 
-        Path filePath = storageLocation.resolve(metadata.getStoredName());
-
-        try {
-            if (!Files.exists(filePath)) {
-                throw new RuntimeException("File does not exist on disk: " + filePath);
-            }
-            if (!Files.isReadable(filePath)) {
-                throw new RuntimeException("File is not readable: " + filePath);
-            }
-
-            return new UrlResource(filePath.toUri());
-
-        } catch (MalformedURLException e) {
-            throw new RuntimeException("Error reading file", e);
+        // Проверка на существование файла с таким именем у пользователя
+        Optional<FileMetadata> existing = fileMetadataRepository.findByFilenameAndOwner(filename, user);
+        if (existing.isPresent()) {
+            throw new IllegalArgumentException("File with this name already exists");
         }
+
+        // Сохраняем файл на диск
+        Path userDir = rootPath.resolve(user.getEmail());
+        if (!Files.exists(userDir)) {
+            Files.createDirectories(userDir);
+        }
+
+        Path filePath = userDir.resolve(filename);
+        try (InputStream in = file.getInputStream()) {
+            Files.copy(in, filePath, StandardCopyOption.REPLACE_EXISTING);
+        }
+
+        // Вычисляем хэш файла (SHA-256)
+        String hash;
+        try (InputStream in = Files.newInputStream(filePath)) {
+            hash = DigestUtils.sha256Hex(in);
+        }
+
+        // Сохраняем метаданные в БД
+        FileMetadata meta = new FileMetadata(filename, file.getSize(), hash, user);
+        fileMetadataRepository.save(meta);
     }
 
-    public void renameFile(String token, String oldName, String newName) {
-        User user = authService.getUserFromToken(token);
-        FileMetadata metadata = fileRepository.findByUserAndOriginalName(user, oldName);
-
-        if (metadata != null) {
-            metadata.setOriginalName(newName);
-            fileRepository.save(metadata);
+    /**
+     * Удалить файл
+     */
+    public void deleteFile(User user, String filename) throws IOException {
+        Optional<FileMetadata> metaOpt = fileMetadataRepository.findByFilenameAndOwner(filename, user);
+        if (metaOpt.isEmpty()) {
+            throw new FileNotFoundException("File not found");
         }
+
+        Path filePath = rootPath.resolve(user.getEmail()).resolve(filename);
+        Files.deleteIfExists(filePath);
+
+        fileMetadataRepository.delete(metaOpt.get());
     }
 
-    public List<FileResponse> getFileList(String token, int limit) {
-        User user = authService.getUserFromToken(token);
-        Pageable pageable = PageRequest.of(0, limit);
+    /**
+     * Получить файл как ресурс (InputStream)
+     */
+    public InputStream getFile(User user, String filename) throws IOException {
+        Optional<FileMetadata> metaOpt = fileMetadataRepository.findByFilenameAndOwner(filename, user);
+        if (metaOpt.isEmpty()) {
+            throw new FileNotFoundException("File not found");
+        }
 
-        List<FileMetadata> files = fileRepository.findTopByUserOrderByOriginalNameAsc(user, pageable);
+        Path filePath = rootPath.resolve(user.getEmail()).resolve(filename);
+        if (!Files.exists(filePath)) {
+            throw new FileNotFoundException("File not found on disk");
+        }
 
-        return files.stream()
-                .map(f -> new FileResponse(f.getOriginalName(), f.getSize()))
-                .collect(Collectors.toList());
+        return Files.newInputStream(filePath);
+    }
+
+    /**
+     * Переименовать файл
+     */
+    public void renameFile(User user, String oldName, String newName) throws IOException {
+        Optional<FileMetadata> metaOpt = fileMetadataRepository.findByFilenameAndOwner(oldName, user);
+        if (metaOpt.isEmpty()) {
+            throw new FileNotFoundException("File not found");
+        }
+        if (fileMetadataRepository.findByFilenameAndOwner(newName, user).isPresent()) {
+            throw new IllegalArgumentException("File with new name already exists");
+        }
+
+        Path userDir = rootPath.resolve(user.getEmail());
+        Path oldFile = userDir.resolve(oldName);
+        Path newFile = userDir.resolve(newName);
+
+        Files.move(oldFile, newFile, StandardCopyOption.REPLACE_EXISTING);
+
+        FileMetadata meta = metaOpt.get();
+        meta.setFilename(newName);
+        fileMetadataRepository.save(meta);
+    }
+
+    /**
+     * Получить список файлов пользователя
+     */
+    public List<FileMetadata> listFiles(User user, int limit) {
+        List<FileMetadata> files = fileMetadataRepository.findAllByOwner(user);
+        if (limit > 0 && files.size() > limit) {
+            return files.subList(0, limit);
+        }
+        return files;
     }
 }
