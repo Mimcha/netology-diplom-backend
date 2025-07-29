@@ -8,6 +8,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -16,14 +18,13 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-
 @Service
 public class AuthService {
-
+    private static final Logger logger = LoggerFactory.getLogger(AuthService.class);
     private final UserRepository userRepository;
     private final TokenRepository tokenRepository;
     private final PasswordEncoder passwordEncoder;
-    private static final Logger logger = (Logger) LoggerFactory.getLogger(AuthService.class);
+
 
     public AuthService(UserRepository userRepository,
                        TokenRepository tokenRepository,
@@ -38,19 +39,15 @@ public class AuthService {
         if (userOpt.isEmpty()) {
             return null;
         }
-
         User user = userOpt.get();
-
         if (passwordEncoder.matches(rawPassword, user.getPassword())) {
             return user;
-        } else {
-            return null;
         }
+        return null;
     }
 
     public void logout(String token) {
-        Optional<Token> tokenOpt = tokenRepository.findById(token);
-        tokenOpt.ifPresent(t -> {
+        tokenRepository.findById(token).ifPresent(t -> {
             t.setActive(false);
             tokenRepository.save(t);
         });
@@ -67,15 +64,14 @@ public class AuthService {
             return null;
         }
         User user = tokenOpt.get().getUser();
-
-        List<GrantedAuthority> authorities = Collections.emptyList();
-
+        List<GrantedAuthority> authorities = Collections.singletonList(
+                new SimpleGrantedAuthority("ROLE_USER")
+        );
         UserDetails userDetails = new org.springframework.security.core.userdetails.User(
                 user.getEmail(),
                 user.getPassword(),
                 authorities
         );
-
         UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
                 userDetails,
                 null,
@@ -84,26 +80,26 @@ public class AuthService {
         logger.debug("Created Authentication for user: {}", user.getEmail());
         return auth;
     }
-
     public User getUserByToken(String token) {
-        return tokenRepository.findByTokenAndActiveTrue(token)
-                .map(Token::getUser)
-                .orElse(null);
+        // Игнорируем token, берем пользователя из контекста безопасности
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.isAuthenticated()) {
+            Object principal = authentication.getPrincipal();
+            if (principal instanceof UserDetails) {
+                String email = ((UserDetails) principal).getUsername();
+                return userRepository.findByEmail(email).orElse(null);
+            }
+        }
+        return null;
     }
 
-    /**
-     * Создаёт и сохраняет новый токен для пользователя, возвращает строку токена
-     */
     public String createTokenForUser(User user) {
         String tokenValue = UUID.randomUUID().toString();
-
         Token token = new Token();
         token.setToken(tokenValue);
         token.setUser(user);
         token.setActive(true);
-
         tokenRepository.save(token);
-
         return tokenValue;
     }
 }

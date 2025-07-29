@@ -11,8 +11,8 @@ public class Token {
     @Id
     private String token;
 
-    @ManyToOne(fetch = FetchType.EAGER)
-    @JoinColumn(name = "user_login")
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_login", referencedColumnName = "email")
     private User user;
 
     private boolean active;

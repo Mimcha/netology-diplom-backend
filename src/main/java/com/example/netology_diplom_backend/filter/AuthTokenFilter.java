@@ -8,72 +8,113 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.web.util.ContentCachingRequestWrapper;
+import org.springframework.web.util.ContentCachingResponseWrapper;
+import org.springframework.web.util.WebUtils;
 
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.Enumeration;
+import java.util.Map;
 
 @Component
 public class AuthTokenFilter extends OncePerRequestFilter {
 
-    @Autowired
-    private AuthService authService;
-
+    private final AuthService authService;
     private static final Logger logger = LoggerFactory.getLogger(AuthTokenFilter.class);
-
     public AuthTokenFilter(AuthService authService) {
         this.authService = authService;
     }
 
     @Override
-    protected void doFilterInternal(HttpServletRequest request,
-                                    HttpServletResponse response,
-                                    FilterChain filterChain) throws ServletException, IOException {
-        // Логирование запроса (пример с исправленным printf)
-        System.out.printf("Request method: %s, URL: %s%n", request.getMethod(), request.getRequestURL());
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+            throws ServletException, IOException {
 
-        // Получение токена из заголовка (с учётом регистра)
-        String token = request.getHeader("Auth-Token");
-        if (token == null) {
-            token = request.getHeader("auth-token");
-        }
+        // Оборачиваем запрос и ответ, чтобы можно было прочитать тело несколько раз
+        ContentCachingRequestWrapper wrappedRequest = new ContentCachingRequestWrapper(request);
+        ContentCachingResponseWrapper wrappedResponse = new ContentCachingResponseWrapper(response);
 
-        // Если токен не найден в заголовках — ищем в куках
-        if (token == null || token.isBlank()) {
-            if (request.getCookies() != null) {
-                for (Cookie cookie : request.getCookies()) {
-                    if ("auth-token".equals(cookie.getName())) {
-                        token = cookie.getValue();
-                        System.out.printf("Token found in cookie 'auth-token': %s%n", token);
-                        break;
-                    }
+        try {
+            // Логируем заголовок auth-token
+            String authToken = wrappedRequest.getHeader("auth-token");
+            if (authToken != null) {
+                logger.debug("Received auth-token header: {}", authToken);
+            } else {
+                logger.debug("No auth-token header found in the request");
+            }
+
+            // Логируем все заголовки
+            Enumeration<String> headerNames = wrappedRequest.getHeaderNames();
+            if (headerNames != null) {
+                while (headerNames.hasMoreElements()) {
+                    String headerName = headerNames.nextElement();
+                    logger.debug("Header: {} = {}", headerName, wrappedRequest.getHeader(headerName));
                 }
             }
-        }
-        // Если токен начинается с "Bearer ", убираем префикс
-        if (token != null && token.startsWith("Bearer ")) {
-            token = token.substring(7);
-        }
-        // Логируем итоговый токен
-        System.out.printf("Using token: %s%n", token);
 
-        // Проверка токена и установка Authentication в контекст
-        if (token != null && !token.isBlank()) {
-            Authentication auth = authService.getAuthentication(token);
-            if (auth != null) {
-                SecurityContextHolder.getContext().setAuthentication(auth);
-                logger.debug("Authentication set for user: {}", auth.getName());
+            // Логируем параметры запроса
+            Map<String, String[]> params = wrappedRequest.getParameterMap();
+            if (!params.isEmpty()) {
+                params.forEach((key, values) -> logger.debug("Parameter: {} = {}", key, Arrays.toString(values)));
+            }
+
+            // Логируем cookies
+            Cookie[] cookies = wrappedRequest.getCookies();
+            if (cookies != null && cookies.length > 0) {
+                Arrays.stream(cookies).forEach(cookie ->
+                        logger.debug("Cookie: {} = {}", cookie.getName(), cookie.getValue()));
             } else {
-                logger.debug("Authentication is null for token");
+                logger.debug("No cookies found in the request");
+            }
+
+            // Выполняем следующий фильтр / обработку контроллером
+            filterChain.doFilter(wrappedRequest, wrappedResponse);
+
+        } finally {
+            // Логируем тело запроса
+            logRequestBody(wrappedRequest);
+
+            // Логируем тело ответа
+            logResponseBody(wrappedResponse);
+
+            // Копируем тело ответа обратно в оригинальный response
+            wrappedResponse.copyBodyToResponse();
+        }
+    }
+
+    private void logRequestBody(ContentCachingRequestWrapper request) {
+        byte[] buf = request.getContentAsByteArray();
+        if (buf.length > 0) {
+            try {
+                String payload = new String(buf, request.getCharacterEncoding());
+                logger.debug("Request body: {}", payload);
+            } catch (UnsupportedEncodingException e) {
+                logger.warn("Could not decode request body", e);
             }
         } else {
-            logger.debug("No token found");
+            logger.debug("Request body is empty");
         }
-
-        filterChain.doFilter(request, response);
     }
+
+    private void logResponseBody(ContentCachingResponseWrapper response) {
+        byte[] buf = response.getContentAsByteArray();
+        if (buf.length > 0) {
+            try {
+                String payload = new String(buf, response.getCharacterEncoding());
+                logger.debug("Response body: {}", payload);
+            } catch (UnsupportedEncodingException e) {
+                logger.warn("Could not decode response body", e);
+            }
+        } else {
+            logger.debug("Response body is empty");
+        }
+    }
+
 }

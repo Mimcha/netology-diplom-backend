@@ -6,6 +6,8 @@ import com.example.netology_diplom_backend.model.User;
 import com.example.netology_diplom_backend.service.AuthService;
 import com.example.netology_diplom_backend.service.FileService;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -19,7 +21,7 @@ import java.util.stream.Collectors;
 
 @RestController
 public class FileController {
-
+    private static final Logger logger = LoggerFactory.getLogger(FileController.class);
     private final AuthService authService;
     private final FileService fileService;
 
@@ -96,10 +98,11 @@ public class FileController {
     public ResponseEntity<?> listFiles(
             @RequestHeader("auth-token") String token,
             @RequestParam(value = "limit", required = false, defaultValue = "0") int limit) {
-
+        logger.debug("FileController: Token : {}", token);
         User user = authService.getUserByToken(token);
+        logger.debug("FileController: User : {}",user);
         if (user == null) {
-            return ResponseEntity.status(401).build();
+             return ResponseEntity.status(401).build();
         }
 
         List<FileMetadata> files = fileService.listFiles(user, limit);
