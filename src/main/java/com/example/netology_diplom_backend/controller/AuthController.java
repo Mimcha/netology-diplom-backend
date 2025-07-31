@@ -57,8 +57,31 @@ public class AuthController {
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<?> logout(@RequestHeader("auth-token") String token) {
-        authService.logout(token);
-        return ResponseEntity.ok().build();
+    public ResponseEntity<?> logout(
+            @RequestHeader(value = "auth-token", required = false) String tokenHeader,
+            @CookieValue(value = "auth-token", required = false) String tokenCookie) {
+
+        // Определяем, откуда брать токен
+        String token = (tokenHeader != null) ? tokenHeader : tokenCookie;
+        if (token != null && token.startsWith("Bearer ")) {
+            token = token.substring(7);
+        }
+
+        if (token != null) {
+            authService.logout(token);
+        }
+
+        // Удаляем куку
+        ResponseCookie clearedCookie = ResponseCookie.from("auth-token", "")
+                .httpOnly(true)
+                .secure(false)
+                .path("/")
+                .maxAge(0)
+                .sameSite("None")
+                .build();
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, clearedCookie.toString())
+                .build();
     }
 }

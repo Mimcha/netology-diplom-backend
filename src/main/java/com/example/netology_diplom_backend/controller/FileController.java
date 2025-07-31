@@ -35,7 +35,9 @@ public class FileController {
             @RequestHeader("auth-token") String token,
             @RequestParam("filename") String filename,
             @RequestParam("file") MultipartFile file) throws IOException {
-
+        if (token != null && token.startsWith("Bearer ")) {
+            token = token.substring(7);
+        }
         User user = authService.getUserByToken(token);
         if (user == null) {
             return ResponseEntity.status(401).build();
@@ -49,7 +51,9 @@ public class FileController {
     public ResponseEntity<?> deleteFile(
             @RequestHeader("auth-token") String token,
             @RequestParam("filename") String filename) throws IOException {
-
+        if (token != null && token.startsWith("Bearer ")) {
+            token = token.substring(7);
+        }
         User user = authService.getUserByToken(token);
         if (user == null) {
             return ResponseEntity.status(401).build();
@@ -64,7 +68,9 @@ public class FileController {
             @RequestHeader("auth-token") String token,
             @RequestParam("filename") String filename,
             HttpServletResponse response) throws IOException {
-
+        if (token != null && token.startsWith("Bearer ")) {
+            token = token.substring(7);
+        }
         User user = authService.getUserByToken(token);
         if (user == null) {
             response.setStatus(401);
@@ -84,7 +90,9 @@ public class FileController {
             @RequestHeader("auth-token") String token,
             @RequestParam("filename") String oldName,
             @RequestBody RenameFileRequest request) throws IOException {
-
+        if (token != null && token.startsWith("Bearer ")) {
+            token = token.substring(7);
+        }
         User user = authService.getUserByToken(token);
         if (user == null) {
             return ResponseEntity.status(401).build();
@@ -98,6 +106,9 @@ public class FileController {
     public ResponseEntity<?> listFiles(
             @RequestHeader("auth-token") String token,
             @RequestParam(value = "limit", required = false, defaultValue = "0") int limit) {
+        if (token != null && token.startsWith("Bearer ")) {
+            token = token.substring(7);
+        }
         logger.debug("FileController: Token : {}", token);
         User user = authService.getUserByToken(token);
         logger.debug("FileController: User : {}",user);

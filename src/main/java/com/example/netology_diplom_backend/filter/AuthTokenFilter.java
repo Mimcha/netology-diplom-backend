@@ -9,6 +9,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
@@ -19,10 +20,7 @@ import org.springframework.web.util.WebUtils;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Enumeration;
-import java.util.Map;
+import java.util.*;
 
 @Component
 public class AuthTokenFilter extends OncePerRequestFilter {
@@ -32,52 +30,53 @@ public class AuthTokenFilter extends OncePerRequestFilter {
     public AuthTokenFilter(AuthService authService) {
         this.authService = authService;
     }
-
     @Override
-    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+    protected void doFilterInternal(HttpServletRequest request,
+                                    HttpServletResponse response,
+                                    FilterChain filterChain)
             throws ServletException, IOException {
 
-        // Оборачиваем запрос и ответ, чтобы можно было прочитать тело несколько раз
+        // Оборачиваем запрос для возможности многократного чтения тела
         ContentCachingRequestWrapper wrappedRequest = new ContentCachingRequestWrapper(request);
         ContentCachingResponseWrapper wrappedResponse = new ContentCachingResponseWrapper(response);
 
         try {
-            // Логируем заголовок auth-token
-            String authToken = wrappedRequest.getHeader("auth-token");
-            if (authToken != null) {
-                logger.debug("Received auth-token header: {}", authToken);
-            } else {
-                logger.debug("No auth-token header found in the request");
+            // Пропускаем preflight-запросы (OPTIONS)
+            if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+                response.setStatus(HttpServletResponse.SC_OK);
+                return;
             }
 
-            // Логируем все заголовки
-            Enumeration<String> headerNames = wrappedRequest.getHeaderNames();
-            if (headerNames != null) {
-                while (headerNames.hasMoreElements()) {
-                    String headerName = headerNames.nextElement();
-                    logger.debug("Header: {} = {}", headerName, wrappedRequest.getHeader(headerName));
+            // Пропускаем запросы к /login без проверки токена
+            String path = request.getRequestURI();
+            if ("/login".equals(path)) {
+                filterChain.doFilter(wrappedRequest, response);
+                return;
+            }
+
+            // Извлекаем токен из заголовка или куки
+            String token = extractToken(wrappedRequest);
+
+            // Если токен найден и валиден, устанавливаем аутентификацию
+            if (token != null && authService.validateToken(token)) {
+                String username = authService.getUsernameFromToken(token);
+                if (username != null) {
+                    // Устанавливаем аутентификацию в контекст
+                    Authentication auth = new UsernamePasswordAuthenticationToken(
+                            username,
+                            null,
+                            Collections.emptyList()
+                    );
+                    SecurityContextHolder.getContext().setAuthentication(auth);
+                    logger.debug("Authentication set for user: {}", username);
                 }
             }
-
-            // Логируем параметры запроса
-            Map<String, String[]> params = wrappedRequest.getParameterMap();
-            if (!params.isEmpty()) {
-                params.forEach((key, values) -> logger.debug("Parameter: {} = {}", key, Arrays.toString(values)));
-            }
-
-            // Логируем cookies
-            Cookie[] cookies = wrappedRequest.getCookies();
-            if (cookies != null && cookies.length > 0) {
-                Arrays.stream(cookies).forEach(cookie ->
-                        logger.debug("Cookie: {} = {}", cookie.getName(), cookie.getValue()));
-            } else {
-                logger.debug("No cookies found in the request");
-            }
-
-            // Выполняем следующий фильтр / обработку контроллером
-            filterChain.doFilter(wrappedRequest, wrappedResponse);
-
+        } catch (Exception e) {
+            logger.error("Error processing authentication", e);
         } finally {
+            // Выполняем цепочку фильтров
+            filterChain.doFilter(wrappedRequest, response);
+
             // Логируем тело запроса
             logRequestBody(wrappedRequest);
 
@@ -87,6 +86,33 @@ public class AuthTokenFilter extends OncePerRequestFilter {
             // Копируем тело ответа обратно в оригинальный response
             wrappedResponse.copyBodyToResponse();
         }
+    }
+
+    private String extractToken(HttpServletRequest request) {
+        // 1. Проверяем заголовок "auth-token"
+        String token = request.getHeader("auth-token");
+        if (token != null && !token.isEmpty()) {
+            if (token != null && token.startsWith("Bearer ")) {
+                token = token.substring(7);
+            }
+            return token;
+        }
+
+        // 2. Проверяем куки
+        Cookie[] cookies = request.getCookies();
+        if (cookies != null) {
+            for (Cookie cookie : cookies) {
+                if ("auth-token".equals(cookie.getName())) {
+                    token = cookie.getValue();
+                    if (token != null && token.startsWith("Bearer ")) {
+                        token = token.substring(7);
+                    }
+                    return cookie.getValue();
+                }
+            }
+        }
+
+        return null;
     }
 
     private void logRequestBody(ContentCachingRequestWrapper request) {
